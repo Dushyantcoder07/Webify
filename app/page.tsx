@@ -872,7 +872,7 @@ export default function CodeEditor() {
   description: "Share URL has been copied to clipboard.",
 });
 
-    } catch (err) {
+    } catch (error) {
       toast.error("Share failed", {
   description: "Could not copy share URL to clipboard.",
 });
