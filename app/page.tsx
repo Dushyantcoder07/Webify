@@ -1543,8 +1543,33 @@ export default function CodeEditor() {
   const [splitRatio, setSplitRatio] = useState(50)
   const isDragging = useRef(false)
   const [isResizing, setIsResizing] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+  const [consoleErrors, setConsoleErrors] = useState<Array<{message: string; line?: number; col?: number}>>([])
+  const [consoleOpen, setConsoleOpen] = useState(false)
 
   // use effect for handling full screen mode
+  useEffect(() => {
+  const checkMobile = () => setIsMobile(window.innerWidth < 768)
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+  return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "WEBIFY_ERROR") {
+        setConsoleErrors((prev) => [...prev, {
+          message: event.data.message,
+          line: event.data.line,
+          col: event.data.col,
+        }])
+        setConsoleOpen(true)
+      }
+    }
+  window.addEventListener("message", handleMessage)
+  return () => window.removeEventListener("message", handleMessage)
+  }, [])
+
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -1573,7 +1598,6 @@ export default function CodeEditor() {
 
 const containerRef = useRef<HTMLDivElement>(null)
 const previewRef = useRef<HTMLIFrameElement>(null)
-const activeEditorRef = useRef<any>(null)
 const handleDragStart = () => {
   isDragging.current = true;
   setIsResizing(true);
@@ -1752,17 +1776,24 @@ useEffect(() => {
         ${code.html}
         <script>
           (function() {
+            window.onerror = function(msg, src, line, col) {
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: String(msg), line: line, col: col }, '*');
+              return true;
+            };
+            var _origConsoleError = console.error;
+            console.error = function() {
+              var msg = Array.prototype.slice.call(arguments).join(' ');
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: msg }, '*');
+              _origConsoleError.apply(console, arguments);
+            };
             var _killTimer = setTimeout(function() {
-              document.body.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;font-size:14px;">⚠️ Script timed out after 5 seconds — possible infinite loop.</div>';
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: 'Script timed out after 5 seconds — possible infinite loop.' }, '*');
             }, 5000);
             try {
               ${code.javascript}
             } catch(e) {
               clearTimeout(_killTimer);
-              var el = document.createElement('div');
-              el.style.cssText = 'padding:20px;color:red;font-family:monospace;font-size:14px;';
-              el.textContent = '⚠️ JS Error: ' + e.message;
-              document.body.appendChild(el);
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: e.message }, '*');
               return;
             }
             clearTimeout(_killTimer);
@@ -1771,9 +1802,10 @@ useEffect(() => {
       </body>
       </html>
     `
-        
+    setConsoleErrors([])
+    const blob = new Blob([combinedCode], { type: "text/html" })    
     
-    const blob = new Blob([combinedCode], { type: "text/html" })
+    
     const url = URL.createObjectURL(blob)
     previewRef.current.src = url
 
@@ -1803,17 +1835,24 @@ useEffect(() => {
       ${code.html}
       <script>
         (function() {
+          window.onerror = function(msg, src, line, col) {
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: String(msg), line: line, col: col }, '*');
+            return true;
+          };
+          var _origConsoleError = console.error;
+          console.error = function() {
+            var msg = Array.prototype.slice.call(arguments).join(' ');
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: msg }, '*');
+            _origConsoleError.apply(console, arguments);
+          };
           var _killTimer = setTimeout(function() {
-            document.body.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;font-size:14px;">⚠️ Script timed out after 5 seconds — possible infinite loop.</div>';
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: 'Script timed out after 5 seconds — possible infinite loop.' }, '*');
           }, 5000);
           try {
             ${code.javascript}
           } catch(e) {
             clearTimeout(_killTimer);
-            var el = document.createElement('div');
-            el.style.cssText = 'padding:20px;color:red;font-family:monospace;font-size:14px;';
-            el.textContent = '⚠️ JS Error: ' + e.message;
-            document.body.appendChild(el);
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: e.message }, '*');
             return;
           }
           clearTimeout(_killTimer);
@@ -1822,8 +1861,10 @@ useEffect(() => {
     </body>
     </html>
   `
-
+    setConsoleErrors([])
     const blob = new Blob([combinedCode], { type: "text/html" })
+
+    
     const url = URL.createObjectURL(blob)
     previewRef.current.src = url
   }
@@ -2226,165 +2267,6 @@ ${code.html}
             </div>
           </div>
         </header>
-
-        {/* Main Content */}
-
-        <div
-          ref={containerRef}
-          className="flex-1 flex flex-col md:flex-row overflow-hidden relative"
-        >
-
-          {/* CODE EDITOR */}
-          {(layout === "code" || layout === "split") && (
-            <div
-
-
-              style={
-                layout === "split"
-                  ? {
-                    width: isMobile ? "100%" : `${splitRatio}%`,
-                    height: isMobile ? `${splitRatio}%` : "100%",
-                  }
-                  : { height: "100%", width: "100%" }
-              }
-              className="flex flex-col border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-700 shrink-0 transition-none"
-
-
-              style={{ width: layout === "split" ? `${splitRatio}%` : "100%" }}
-              className="flex flex-col border-r border-gray-200 dark:border-gray-700"
-
-            >
-              <Tabs
-                value={activeTab}
-                onValueChange={(value) => setActiveTab(value as keyof CodeContent)}
-                className="flex-1 flex flex-col"
-              >
-                {/* Tabs Header */}
-                <div className="bg-white dark:bg-gray-800 border-b px-4 overflow-x-auto scrollbar-hide">
-                  <TabsList className="flex w-full min-w-max">
-                    <TabsTrigger value="html" className="flex-1">HTML</TabsTrigger>
-                    <TabsTrigger value="css" className="flex-1">CSS</TabsTrigger>
-                    <TabsTrigger value="javascript" className="flex-1">JS</TabsTrigger>
-                  </TabsList>
-                </div>
-
-                {/* Tabs Content */}
-                <div className="flex-1 overflow-hidden">
-                  <TabsContent value="html" className="h-full m-0">
-                    <MonacoEditor
-                      language="html"
-                      value={code.html}
-                      onChange={(value) => handleCodeChange("html", value)}
-                      theme={theme}
-                      onEditorReady={(ed) => (activeEditorRef.current = ed)}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="css" className="h-full m-0">
-                    <MonacoEditor
-                      language="css"
-                      value={code.css}
-                      onChange={(value) => handleCodeChange("css", value)}
-                      theme={theme}
-                      onEditorReady={(ed) => (activeEditorRef.current = ed)}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="javascript" className="h-full m-0">
-                    <MonacoEditor
-                      language="javascript"
-                      value={code.javascript}
-                      onChange={(value) => handleCodeChange("javascript", value)}
-                      theme={theme}
-                      onEditorReady={(ed) => (activeEditorRef.current = ed)}
-                    />
-                  </TabsContent>
-                </div>
-              </Tabs>
-            </div>
-          )}
-
-          {/* RESIZE DIVIDER */}
-          {layout === "split" && (
-            <div
-              onMouseDown={handleDragStart}
-              onTouchStart={handleDragStart}
-              onDragStart={(e) => e.preventDefault()}
-              className="w-full h-3 md:w-2 md:h-full cursor-row-resize md:cursor-col-resize bg-gray-300 dark:bg-gray-600 hover:bg-blue-500 active:bg-blue-600 transition shrink-0 z-10 flex items-center justify-center touch-none"
-            >
-              <div className="flex md:flex-col gap-1">
-                <div className="w-1 h-1 rounded-full bg-gray-500 dark:bg-gray-400"></div>
-                <div className="w-1 h-1 rounded-full bg-gray-500 dark:bg-gray-400"></div>
-                <div className="w-1 h-1 rounded-full bg-gray-500 dark:bg-gray-400"></div>
-              </div>
-            </div>
-          )}
-
-          {/* PREVIEW */}
-          {(layout === "preview" || layout === "split") && (
-            <div
-
-
-              style={layout === "split"
-                ? {
-                  width: isMobile ? "100%" : `${100 - splitRatio}%`,
-                  height: isMobile ? `${100 - splitRatio}%` : "100%",
-                }
-                : { height: "100%", width: "100%" }
-              }
-              className="flex flex-col shrink-0 relative transition-none"
-
-
-              style={{ width: layout === "split" ? `${100 - splitRatio}%` : "100%" }}
-              className="flex flex-col"
-
-            >
-              <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 flex items-center justify-between overflow-x-auto scrollbar-hide shrink-0">
-                <div className="flex items-center gap-2 min-w-max">
-                  <Play className="w-4 h-4 text-green-600 shrink-0" />
-                  <span className="font-medium text-gray-900 dark:text-white">
-                    Live Preview
-                  </span>
-
-                  <Badge variant="secondary" className="text-xs shrink-0">
-                    {autoRun ? "Auto-refresh" : "Manual"}
-                  </Badge>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAutoRun(!autoRun)}
-                    className="shrink-0"
-                  >
-                    {autoRun ? "Pause" : "Resume"}
-                  </Button>
-
-                  {!autoRun && (
-                    <Button size="sm" onClick={runCodeManually} className="shrink-0">
-                      Run
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className={`flex-1 bg-white relative ${isResizing ? "pointer-events-none select-none" : ""}`}>
-                <iframe
-                  ref={previewRef}
-                  className="absolute inset-0 w-full h-full border-0"
-                  title="Live Preview"
-                  sandbox="allow-scripts allow-forms allow-popups allow-modals"
-                />
-              </div>
-              {isResizing && (
-                <div className="absolute inset-0 z-20 cursor-row-resize md:cursor-col-resize"></div>
-              )}
-            </div>
-          )}
-
-        </div>
-
-
-
         {/* Main Container - Code Editor + Preview */}
         <div
           ref={containerRef}
@@ -2514,11 +2396,49 @@ ${code.html}
                   <div className="absolute inset-0 z-20 cursor-row-resize md:cursor-col-resize" />
                 )}
               </div>
+              {/* Console Panel */}
+              <div className={`border-t border-gray-200 dark:border-gray-700 bg-gray-950 transition-all ${consoleOpen ? "h-36" : "h-8"}`}>
+                <div
+                  className="flex items-center justify-between px-3 h-8 cursor-pointer select-none"
+                  onClick={() => setConsoleOpen((o) => !o)}
+                >
+                  <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+                    <span>Console</span>
+                    {consoleErrors.length > 0 && (
+                      <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                        {consoleErrors.length}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {consoleErrors.length > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConsoleErrors([]) }}
+                        className="text-[10px] text-gray-500 hover:text-gray-300"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <span className="text-gray-500 text-xs">{consoleOpen ? "▼" : "▲"}</span>
+                  </div>
+                </div>
+                {consoleOpen && (
+                  <div className="overflow-y-auto h-28 px-3 py-1 space-y-1">
+                    {consoleErrors.length === 0 ? (
+                      <p className="text-xs text-gray-500 font-mono">No errors</p>
+                    ) : (
+                      consoleErrors.map((err, i) => (
+                        <div key={i} className="text-xs font-mono text-red-400">
+                          {err.line ? `[${err.line}:${err.col}] ` : ""}{err.message}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
-
-
       </div>
     </>
   )
