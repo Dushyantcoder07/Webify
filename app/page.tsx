@@ -45,11 +45,16 @@ import { toast } from 'sonner'
 import JSZip from "jszip"
 import dynamic from "next/dynamic"
 import Link from "next/link"
+import {
+  EditorErrorBoundary,
+  PreviewErrorBoundary,
+  AppErrorBoundary,
+} from "./components/error-boundary"
+
 // Monaco Editor must be loaded client-side only.
 // It directly accesses browser APIs (window, Worker) that don't exist in Node.
 // Removing `ssr: false` or moving this import to a Server Component will
 // cause a hydration crash. Keep this dynamic import exactly as-is.
-// Dynamically import Monaco Editor to avoid SSR issues
 const MonacoEditor = dynamic(() => import("./components/monaco-editor"), {
   ssr: false,
   loading: () => (
@@ -1573,7 +1578,8 @@ export default function CodeEditor() {
 
 const containerRef = useRef<HTMLDivElement>(null)
 const previewRef = useRef<HTMLIFrameElement>(null)
-const activeEditorRef = useRef<any>(null)
+// Typed to match the IStandaloneCodeEditor instance from monaco-editor.tsx
+const activeEditorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null)
 const handleDragStart = () => {
   isDragging.current = true;
   setIsResizing(true);
@@ -1715,50 +1721,67 @@ useEffect(() => {
     if (!previewRef.current) return
     if (!autoRun) return
 
+    // Show validation errors immediately — no debounce needed here since
+    // we are only setting srcdoc, not rebuilding the full iframe.
     if (!htmlValidation.isValid) {
       previewRef.current.srcdoc = createPreviewErrorHtml(htmlValidation.message ?? "Invalid HTML syntax.")
       return
     }
 
-    const combinedCode = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Live Preview</title>
-        <style>${code.css}</style>
-      </head>
-      <body>
-        ${code.html}
-        <script>
-          (function() {
-            var _killTimer = setTimeout(function() {
-              document.body.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;font-size:14px;">⚠️ Script timed out after 5 seconds — possible infinite loop.</div>';
-            }, 5000);
-            try {
-              ${code.javascript}
-            } catch(e) {
-              clearTimeout(_killTimer);
-              var el = document.createElement('div');
-              el.style.cssText = 'padding:20px;color:red;font-family:monospace;font-size:14px;';
-              el.textContent = '⚠️ JS Error: ' + e.message;
-              document.body.appendChild(el);
-              return;
-            }
-            clearTimeout(_killTimer);
-          })();
-        <\/script>
-      </body>
-      </html>
-    `
-        
-    
-    const blob = new Blob([combinedCode], { type: "text/html" })
-    const url = URL.createObjectURL(blob)
-    previewRef.current.src = url
+    // Debounce the iframe rebuild by 400ms so the preview only refreshes
+    // after the user pauses typing, not on every single keystroke.
+    // This prevents: flickering, animation/timer resets mid-keystroke,
+    // and unnecessary CPU churn during fast typing.
+    // 400ms matches CodePen's debounce — fast enough to feel live,
+    // long enough to batch rapid keystrokes into one render.
+    const debounceTimer = setTimeout(() => {
+      if (!previewRef.current) return
 
-    return () => URL.revokeObjectURL(url)
+      const combinedCode = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Live Preview</title>
+          <style>${code.css}</style>
+        </head>
+        <body>
+          ${code.html}
+          <script>
+            (function() {
+              var _killTimer = setTimeout(function() {
+                document.body.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;font-size:14px;">&#9888;&#65039; Script timed out after 5 seconds — possible infinite loop.</div>';
+              }, 5000);
+              try {
+                ${code.javascript}
+              } catch(e) {
+                clearTimeout(_killTimer);
+                var el = document.createElement('div');
+                el.style.cssText = 'padding:20px;color:red;font-family:monospace;font-size:14px;';
+                el.textContent = '&#9888;&#65039; JS Error: ' + e.message;
+                document.body.appendChild(el);
+                return;
+              }
+              clearTimeout(_killTimer);
+            })();
+          <\/script>
+        </body>
+        </html>
+      `
+
+      const blob = new Blob([combinedCode], { type: "text/html" })
+      const url = URL.createObjectURL(blob)
+      previewRef.current.src = url
+
+      // Revoke the blob URL after the iframe has loaded it,
+      // preventing object URL leaks on every keystroke.
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    }, 400)
+
+    // Cancel the pending rebuild if code changes again before 400ms elapses.
+    // Only the last keystroke in a burst will actually trigger a refresh.
+    return () => clearTimeout(debounceTimer)
   }, [code, htmlValidation, autoRun])
 
   const runCodeManually = () => {
@@ -2097,6 +2120,7 @@ ${code.html}
   }, [])
 
   return (
+    <AppErrorBoundary>
     <>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
       <div className={`h-screen flex flex-col bg-gray-50 dark:bg-gray-900 ${isFullscreen ? "fixed inset-0 z-50" : ""}`}>
@@ -2215,6 +2239,7 @@ ${code.html}
         >
           {/* CODE EDITOR */}
           {(layout === "code" || layout === "split") && (
+  <EditorErrorBoundary>
   <div
   style={
     layout === "split"
@@ -2275,6 +2300,7 @@ ${code.html}
       </div>
     </Tabs>
   </div>
+  </EditorErrorBoundary>
 )}
 
           {/* RESIZER - DESKTOP ONLY */}
@@ -2289,6 +2315,7 @@ ${code.html}
 
           {/* PREVIEW PANEL */}
           {(layout === "preview" || layout === "split") && (
+            <PreviewErrorBoundary>
             <div
               style={
                 layout === "split" && !isMobile
@@ -2338,11 +2365,13 @@ ${code.html}
                 )}
               </div>
             </div>
+            </PreviewErrorBoundary>
           )}
         </div>
 
 
       </div>
     </>
+    </AppErrorBoundary>
   )
 }
