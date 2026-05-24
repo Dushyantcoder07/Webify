@@ -225,62 +225,6 @@ export default function CodeEditor() {
     }
   };
 
-const containerRef = useRef<HTMLDivElement>(null)
-const previewRef = useRef<HTMLIFrameElement>(null)
-const [isMobile, setIsMobile] = useState(false)
-
-useEffect(() => {
-  const updateIsMobile = () => {
-    setIsMobile(window.innerWidth < 768)
-  }
-
-  updateIsMobile()
-  window.addEventListener("resize", updateIsMobile)
-
-  return () => {
-    window.removeEventListener("resize", updateIsMobile)
-  }
-}, [])
-
-const handleDragStart = () => {
-  isDragging.current = true;
-  setIsResizing(true);
-  document.body.style.userSelect = "none";
-};
-
-const handleDragMove = useCallback((clientX: number, clientY: number) => {
-  if (!isDragging.current || !containerRef.current) return;
-
-  const rect = containerRef.current.getBoundingClientRect();
-
-  let newRatio;
-  if (isMobile) {
-    newRatio = ((clientY - rect.top) / rect.height) * 100;
-  } else {
-    newRatio = ((clientX - rect.left) / rect.width) * 100;
-  }
-
-  const clampedRatio = Math.max(20, Math.min(80, newRatio));
-  setSplitRatio(clampedRatio);
-}, [isMobile]);
-
-const handleMouseMove = useCallback((e: globalThis.MouseEvent) => {
-  handleDragMove(e.clientX, e.clientY);
-}, [handleDragMove]);
-
-const handleTouchMove = useCallback((e: globalThis.TouchEvent) => {
-  if (isDragging.current) {
-    handleDragMove(e.touches[0].clientX, e.touches[0].clientY);
-  }
-}, [handleDragMove]);
-
-const handleDragEnd = useCallback(() => {
-  isDragging.current = false;
-  setIsResizing(false);
-  document.body.style.userSelect = "auto";
-  document.body.style.cursor = "default";
-}, []);
-
   // Tracks which template is currently active
 
   const [isMobile, setIsMobile] = useState(false)
