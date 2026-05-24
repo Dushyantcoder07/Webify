@@ -1136,8 +1136,13 @@ export default function CodeEditor() {
   const [isResizing, setIsResizing] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
+  const [consoleErrors, setConsoleErrors] = useState<Array<{message: string; line?: number; col?: number}>>([])
+  const [consoleOpen, setConsoleOpen] = useState(false)
+
+
   const [moreSheetOpen, setMoreSheetOpen] = useState(false)
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null)
+
 
 
   // use effect for handling full screen mode
@@ -1149,6 +1154,23 @@ export default function CodeEditor() {
   }, [])
 
   useEffect(() => {
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "WEBIFY_ERROR") {
+        setConsoleErrors((prev) => [...prev, {
+          message: event.data.message,
+          line: event.data.line,
+          col: event.data.col,
+        }])
+        setConsoleOpen(true)
+      }
+    }
+  window.addEventListener("message", handleMessage)
+  return () => window.removeEventListener("message", handleMessage)
+  }, [])
+
+  useEffect(() => {
+
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
@@ -1417,17 +1439,35 @@ useEffect(() => {
         ${code.html}
         <script>
           (function() {
+            window.onerror = function(msg, src, line, col) {
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: String(msg), line: line, col: col }, '*');
+              return true;
+            };
+            var _origConsoleError = console.error;
+            console.error = function() {
+              var msg = Array.prototype.slice.call(arguments).join(' ');
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: msg }, '*');
+              _origConsoleError.apply(console, arguments);
+            };
             var _killTimer = setTimeout(function() {
+
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: 'Script timed out after 5 seconds — possible infinite loop.' }, '*');
+
               document.body.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;font-size:14px;">âš ï¸ Script timed out after 5 seconds â€” possible infinite loop.</div>';
+
             }, 5000);
             try {
               ${code.javascript}
             } catch(e) {
               clearTimeout(_killTimer);
+
+              window.parent.postMessage({ type: 'WEBIFY_ERROR', message: e.message }, '*');
+
               var el = document.createElement('div');
               el.style.cssText = 'padding:20px;color:red;font-family:monospace;font-size:14px;';
               el.textContent = 'âš ï¸ JS Error: ' + e.message;
               document.body.appendChild(el);
+
               return;
             }
             clearTimeout(_killTimer);
@@ -1436,10 +1476,13 @@ useEffect(() => {
       </body>
       </html>
     `
-        
+    setConsoleErrors([])
+    const blob = new Blob([combinedCode], { type: "text/html" })    
+    
     
 
     const blob = new Blob([combinedCode], { type: "text/html" })
+
     const url = URL.createObjectURL(blob)
     previewRef.current.src = url
     return () => URL.revokeObjectURL(url)
@@ -1468,17 +1511,35 @@ useEffect(() => {
       ${code.html}
       <script>
         (function() {
+          window.onerror = function(msg, src, line, col) {
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: String(msg), line: line, col: col }, '*');
+            return true;
+          };
+          var _origConsoleError = console.error;
+          console.error = function() {
+            var msg = Array.prototype.slice.call(arguments).join(' ');
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: msg }, '*');
+            _origConsoleError.apply(console, arguments);
+          };
           var _killTimer = setTimeout(function() {
+
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: 'Script timed out after 5 seconds — possible infinite loop.' }, '*');
+
             document.body.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;font-size:14px;">âš ï¸ Script timed out after 5 seconds â€” possible infinite loop.</div>';
+
           }, 5000);
           try {
             ${code.javascript}
           } catch(e) {
             clearTimeout(_killTimer);
+
+            window.parent.postMessage({ type: 'WEBIFY_ERROR', message: e.message }, '*');
+
             var el = document.createElement('div');
             el.style.cssText = 'padding:20px;color:red;font-family:monospace;font-size:14px;';
             el.textContent = 'âš ï¸ JS Error: ' + e.message;
             document.body.appendChild(el);
+
             return;
           }
           clearTimeout(_killTimer);
@@ -1488,8 +1549,14 @@ useEffect(() => {
     </html>
   `
 
+    setConsoleErrors([])
+
+
+
 
     const blob = new Blob([combinedCode], { type: "text/html" })
+
+    
     const url = URL.createObjectURL(blob)
     previewRef.current.src = url
   }
@@ -1926,6 +1993,7 @@ useEffect(() => {
 
 
 
+
         {/* Main Container - Code Editor + Preview */}
         <div
           ref={containerRef}
@@ -2018,6 +2086,89 @@ useEffect(() => {
               }
               className="flex flex-col overflow-hidden shrink-0"
             >
+
+              <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-2 sm:p-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Play className="w-4 h-4 text-green-600 shrink-0" />
+                  <span className="font-medium text-gray-900 dark:text-white">Live Preview</span>
+                  <Badge variant="secondary" className="text-xs shrink-0">
+                    {autoRun ? "Auto-refresh" : "Manual"}
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAutoRun(!autoRun)}
+                    className="shrink-0"
+                  >
+                    {autoRun ? "Pause" : "Resume"}
+                  </Button>
+                  {!autoRun && (
+                    <Button size="sm" onClick={runCodeManually} className="shrink-0">
+                      Run
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div
+                className={`flex-1 bg-white dark:bg-gray-900 relative ${
+                  isResizing ? "pointer-events-none" : ""
+                }`}
+              >
+                <iframe
+                  ref={previewRef}
+                  className="absolute inset-0 w-full h-full border-0"
+                  title="Live Preview"
+                  sandbox="allow-scripts allow-forms allow-popups allow-modals"
+                />
+                {isResizing && (
+                  <div className="absolute inset-0 z-20 cursor-row-resize md:cursor-col-resize" />
+                )}
+              </div>
+              {/* Console Panel */}
+              <div className={`border-t border-gray-200 dark:border-gray-700 bg-gray-950 transition-all ${consoleOpen ? "h-36" : "h-8"}`}>
+                <div
+                  className="flex items-center justify-between px-3 h-8 cursor-pointer select-none"
+                  onClick={() => setConsoleOpen((o) => !o)}
+                >
+                  <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+                    <span>Console</span>
+                    {consoleErrors.length > 0 && (
+                      <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                        {consoleErrors.length}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {consoleErrors.length > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConsoleErrors([]) }}
+                        className="text-[10px] text-gray-500 hover:text-gray-300"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <span className="text-gray-500 text-xs">{consoleOpen ? "▼" : "▲"}</span>
+                  </div>
+                </div>
+                {consoleOpen && (
+                  <div className="overflow-y-auto h-28 px-3 py-1 space-y-1">
+                    {consoleErrors.length === 0 ? (
+                      <p className="text-xs text-gray-500 font-mono">No errors</p>
+                    ) : (
+                      consoleErrors.map((err, i) => (
+                        <div key={i} className="text-xs font-mono text-red-400">
+                          {err.line ? `[${err.line}:${err.col}] ` : ""}{err.message}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
               {PreviewPanel}
             </div>
           )}
@@ -2042,6 +2193,7 @@ useEffect(() => {
             ))}
           </div>
         </nav>
+
       </div>
     </>
   )
