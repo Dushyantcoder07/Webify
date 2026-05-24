@@ -38,7 +38,6 @@ import {
   PreviewErrorBoundary,
   AppErrorBoundary,
 } from "./components/error-boundary"
-import AIAssistant from "./components/AIAssistant"
 
 const MonacoEditor = dynamic(() => import("./components/monaco-editor"), {
   ssr: false,
@@ -1139,23 +1138,6 @@ export default function CodeEditor() {
     previewRef.current.srcdoc = combinedCode
   }, [code])
 
-  const formatCode = useCallback(async () => {
-    try {
-      let formatted: string
-      const current = code[activeTab]
-      if (activeTab === 'html') {
-        formatted = await prettier.format(current, { parser: 'html', plugins: [parserHtml] })
-      } else if (activeTab === 'css') {
-        formatted = await prettier.format(current, { parser: 'css', plugins: [parserCss] })
-      } else {
-        formatted = await prettier.format(current, { parser: 'babel', plugins: [parserBabel, parserEstree] })
-      }
-      setCode((prev) => ({ ...prev, [activeTab]: formatted }))
-      toast.success(`${activeTab.toUpperCase()} formatted successfully`)
-    } catch {
-      toast.error('Could not format code — check for syntax errors')
-    }
-  }, [activeTab, code])
 
   const handleCodeChange = (language: keyof CodeContent, value: string) => {
     setCode((prev) => ({ ...prev, [language]: value }))
