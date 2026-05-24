@@ -199,31 +199,31 @@ export default function CodeEditor() {
     };
   }, []);
 
-  const handleFullscreenToggle = async () => {
-    try {
-      if (document.fullscreenElement) {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        }
-        return;
-      }
+  // const handleFullscreenToggle = async () => {
+  //   try {
+  //     if (document.fullscreenElement) {
+  //       if (document.exitFullscreen) {
+  //         await document.exitFullscreen();
+  //       }
+  //       return;
+  //     }
 
-      if (isFullscreen) {
-        setIsFullscreen(false);
-        return;
-      }
+  //     if (isFullscreen) {
+  //       setIsFullscreen(false);
+  //       return;
+  //     }
 
-      if (containerRef.current?.requestFullscreen) {
-        await containerRef.current.requestFullscreen();
-        return;
-      }
+  //     if (containerRef.current?.requestFullscreen) {
+  //       await containerRef.current.requestFullscreen();
+  //       return;
+  //     }
 
-      setIsFullscreen(true);
-    } catch (err) {
-      console.error("Error attempting to toggle fullscreen:", err);
-      setIsFullscreen((prev) => !prev);
-    }
-  };
+  //     setIsFullscreen(true);
+  //   } catch (err) {
+  //     console.error("Error attempting to toggle fullscreen:", err);
+  //     setIsFullscreen((prev) => !prev);
+  //   }
+  // };
 
   // Tracks which template is currently active
 
