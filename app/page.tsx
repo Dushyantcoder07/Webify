@@ -805,7 +805,7 @@ if (layout === "preview") setLayout("split")
                           {runtimeError.line ? ` (Line ${runtimeError.line}${runtimeError.column ? `:${runtimeError.column}` : ''})` : ''}
                           {runtimeError.message === "Script error." && runtimeError.line === 0 && (
                             <span style={{ fontSize: '11px', color: '#9B2C2C', marginTop: '2px', display: 'block' }}>
-                              Tip: External script error - check your CDN links or add crossorigin="anonymous"
+                              Tip: External script error - check your CDN links or add crossorigin=&quot;anonymous&quot;
                             </span>
                           )}
                         </span>
